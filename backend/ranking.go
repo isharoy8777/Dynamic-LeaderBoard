@@ -7,25 +7,13 @@ import (
 
 
 const (
-
 	MinRating = 100
-
 	MaxRating = 5000
-
-
 	RatingBucketSize = MaxRating + 1
 )
-
 type RankingEngine struct {
-
-
-	ratingCount [RatingBucketSize]int
-
-
-
+	ratingCount [RatingBucketSize]int // 5001
 	mu sync.RWMutex
-
-
 	totalUsers int
 }
 
@@ -33,15 +21,10 @@ var rankingEngine *RankingEngine
 
 func InitRankingEngine() error {
 	rankingEngine = &RankingEngine{}
-
-
-
 	counts, err := GetRatingCounts()
 	if err != nil {
 		return err
 	}
-
-
 	totalUsers := 0
 	for rating, count := range counts {
 		if rating >= MinRating && rating <= MaxRating {
@@ -50,7 +33,6 @@ func InitRankingEngine() error {
 		}
 	}
 	rankingEngine.totalUsers = totalUsers
-
 	log.Printf("✓ Ranking engine initialized with %d users across %d unique ratings",
 		totalUsers, len(counts))
 
@@ -61,10 +43,12 @@ func (re *RankingEngine) GetRank(rating int) int {
 	re.mu.RLock()
 	defer re.mu.RUnlock()
 
-
+	// Dense ranking: count distinct ratings above this rating
 	rank := 1
 	for r := rating + 1; r <= MaxRating; r++ {
-		rank += re.ratingCount[r]
+		if re.ratingCount[r] > 0 {
+			rank++
+		}
 	}
 	return rank
 }
@@ -73,24 +57,23 @@ func (re *RankingEngine) GetRankBatch(ratings []int) []int {
 	re.mu.RLock()
 	defer re.mu.RUnlock()
 
-
-
+	// Dense ranking: count distinct ratings above each rating
+	// cumulativeAbove[r] = number of distinct ratings higher than r
 	cumulativeAbove := make([]int, RatingBucketSize)
 
-
-	sum := 0
+	distinctCount := 0
 	for r := MaxRating; r >= MinRating; r-- {
-		cumulativeAbove[r] = sum
-		sum += re.ratingCount[r]
+		cumulativeAbove[r] = distinctCount
+		if re.ratingCount[r] > 0 {
+			distinctCount++
+		}
 	}
-
 
 	ranks := make([]int, len(ratings))
 	for i, rating := range ratings {
 		if rating >= MinRating && rating <= MaxRating {
 			ranks[i] = 1 + cumulativeAbove[rating]
 		} else {
-		
 			ranks[i] = -1
 		}
 	}
